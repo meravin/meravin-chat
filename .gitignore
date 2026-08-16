@@ -1,0 +1,23 @@
+# --- secrets: never commit ---
+relay/.env
+relay/prompts/ai-a.md
+relay/prompts/ai-b.md
+ios/YourChat/Config/Secrets.swift
+
+# --- runtime data ---
+relay/data/
+*.log
+
+# --- dependencies ---
+node_modules/
+
+# --- Xcode ---
+ios/*.xcodeproj
+ios/*.xcworkspace
+ios/build/
+ios/DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# --- macOS ---
+.DS_Store

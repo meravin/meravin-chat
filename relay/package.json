@@ -1,0 +1,20 @@
+{
+  "name": "yourchat-relay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "YourChat message relay: one WebSocket, three channels, two AI adapters.",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/",
+    "cli": "node tools/cli-client.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.68.0",
+    "openai": "^6.9.0",
+    "ws": "^8.21.3"
+  }
+}
