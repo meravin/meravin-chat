@@ -47,7 +47,7 @@ const daysAgo = (n) => {
 
 // --- profile: Day 35 today, with two countdowns ------------------------------
 await api('PATCH', '/api/profile', {
-  userName: '敏敏',
+  userName: '蛋黄',
   aiAName: 'Claude',
   aiBName: 'Codex',
   groupName: '我们仨',
