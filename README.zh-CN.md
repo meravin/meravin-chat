@@ -2,6 +2,10 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
+> **仓库里还有 [YourChat](YOURCHAT.md)** —— 一个 iOS 聊天 App：两个独立 AI
+> 加三人群聊、基于 HealthKit 的首页仪表盘、双人日记，跑在一个 Node.js
+> 消息桥上。找的是这个的话直接看那边。
+
 这是我在新 MacBook Pro 上的第一个 GitHub 项目。
 
 ## 运行
