@@ -139,8 +139,8 @@ export async function startServer({
     clients.add(ws)
 
     // A reconnecting client gets one page per channel and reconciles locally.
-    for (const { channel, messages } of relay.snapshot()) {
-      ws.send(JSON.stringify(historyEvent(channel, messages)))
+    for (const { channel, messages, cursor } of relay.snapshot()) {
+      ws.send(JSON.stringify(historyEvent(channel, messages, cursor)))
     }
 
     ws.on('message', (data) => {

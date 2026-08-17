@@ -9,7 +9,8 @@ struct TodoExtractionSheet: View {
     @Environment(ThemeStore.self) private var theme
 
     let entry: DiaryEntry
-    var onAdded: () async -> Void
+    // No completion handler: the presenter refreshes once when this closes,
+    // which covers both the new entry and any todos it produced.
 
     @State private var candidates: [String] = []
     @State private var selected: Set<String> = []
@@ -141,7 +142,6 @@ struct TodoExtractionSheet: View {
                 _ = try? await model.api.createTodo(
                     owner: entry.author, title: candidate, source: source)
             }
-            await onAdded()
             dismiss()
         }
     }

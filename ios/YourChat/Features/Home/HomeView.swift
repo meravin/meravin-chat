@@ -115,9 +115,9 @@ struct HomeView: View {
         if let metrics, !metrics.isEmpty {
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible())], spacing: 14) {
                 if metrics.steps != nil { StepsCard(metrics: metrics) }
-                if metrics.heartRate != nil { HeartRateCard(rate: metrics.heartRate!) }
-                if metrics.sleep != nil { SleepCard(sleep: metrics.sleep!) }
-                if metrics.cycle != nil { CycleCard(cycle: metrics.cycle!) }
+                if let rate = metrics.heartRate { HeartRateCard(rate: rate) }
+                if let sleep = metrics.sleep { SleepCard(sleep: sleep) }
+                if let cycle = metrics.cycle { CycleCard(cycle: cycle) }
             }
 
             if let body = metrics.body {

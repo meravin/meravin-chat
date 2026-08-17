@@ -67,7 +67,13 @@ export function makeAgentMessage({ id, channel, sender, text, hop = 0, replyTo =
 }
 
 // --- server → client events -------------------------------------------------
-export const historyEvent = (channel, messages) => ({ type: 'history', channel, messages })
+/**
+ * `cursor` addresses the page before this one, or null at the beginning of
+ * history. Sending it with the snapshot is what lets a reconnecting client keep
+ * paging without first re-fetching the page it already has.
+ */
+export const historyEvent = (channel, messages, cursor = null) =>
+  ({ type: 'history', channel, messages, cursor })
 export const ackEvent = (channel, id, time) => ({ type: 'ack', channel, id, time })
 export const deltaEvent = (channel, message) => ({ type: 'delta', channel, message })
 export const errorEvent = (code, message, extra = {}) => ({ type: 'error', code, message, ...extra })

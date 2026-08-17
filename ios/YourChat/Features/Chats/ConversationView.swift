@@ -96,10 +96,15 @@ struct ConversationView: View {
         }
     }
 
-    /// Either an AI is composing, or one failed — never an endless spinner.
+    /// Either an AI is composing, or something failed — never an endless spinner.
     @ViewBuilder
     private var statusLine: some View {
-        if let error = chat.errorDetail(in: channel) {
+        if let rejection = chat.lastRejection {
+            // A rejected message, reported separately from connection state so
+            // it can't make a healthy socket look offline.
+            label("这条没发出去（\(rejection)）", tint: Color(hex: 0xD05353),
+                  icon: "exclamationmark.circle")
+        } else if let error = chat.errorDetail(in: channel) {
             label(error, tint: Color(hex: 0xD05353), icon: "exclamationmark.triangle")
         } else if chat.isThinking(in: channel) {
             label("正在输入…", tint: theme.secondaryOnBackground, icon: nil)

@@ -77,8 +77,15 @@ struct EntryComposer: View {
             focused = existing == nil
         }
         .sheet(item: $justSaved) { entry in
-            TodoExtractionSheet(entry: entry) { await onSaved() }
-                .onDisappear { dismiss() }
+            TodoExtractionSheet(entry: entry)
+                .onDisappear {
+                    // Refresh once, whether todos were added or the sheet was
+                    // skipped, then close the composer behind it.
+                    Task {
+                        await onSaved()
+                        dismiss()
+                    }
+                }
         }
     }
 
@@ -119,10 +126,16 @@ struct EntryComposer: View {
             } else {
                 let created = try? await model.api.createDiary(
                     author: author, date: DateOnly.today, mood: mood, body: body_)
-                await onSaved()
                 isSaving = false
                 // A fresh entry is the one worth mining for todos; an edit is not.
-                if let created { justSaved = created } else { dismiss() }
+                // The reload waits for the extraction sheet, so one save costs
+                // one refresh rather than two.
+                if let created {
+                    justSaved = created
+                } else {
+                    await onSaved()
+                    dismiss()
+                }
             }
         }
     }

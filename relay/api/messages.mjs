@@ -10,20 +10,20 @@ export function messageRoutes({ store }) {
       if (!isChannel(channel)) throw badRequest('bad_channel', `unknown channel: ${channel}`)
 
       const limit = Math.min(Number(query.get('limit')) || 30, 200)
-      const rawBefore = query.get('before')
-      // `before` is the server time of the oldest message the client already
-      // has; omitting it returns the newest page.
-      const before = rawBefore == null ? null : Number(rawBefore)
-      if (rawBefore != null && !Number.isFinite(before)) {
-        throw badRequest('bad_cursor', 'before must be a millisecond timestamp')
+      // Opaque to the client: `<ms>.<rowid>`. A bare timestamp would skip
+      // messages that share a millisecond with the page boundary.
+      const cursor = query.get('cursor')
+      if (cursor != null && !/^\d+\.\d+$/.test(cursor)) {
+        throw badRequest('bad_cursor', 'cursor must be the value returned as nextCursor')
       }
 
-      const messages = store.history(channel, { limit, before })
+      const page = store.historyPage(channel, { limit, cursor })
       return sendJson(res, 200, {
         channel,
-        messages,
-        // Short page means we reached the beginning — the client stops asking.
-        hasMore: messages.length === limit,
+        messages: page.messages,
+        // Null once the beginning is reached, so the client stops asking.
+        nextCursor: page.hasMore ? page.cursor : null,
+        hasMore: page.hasMore,
       })
     },
   }

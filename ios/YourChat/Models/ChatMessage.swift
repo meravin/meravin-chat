@@ -117,7 +117,9 @@ struct OutboundMessage: Codable, Sendable {
 
 /// The four server → client events, as one decodable enum.
 enum ServerEvent: Sendable {
-    case history(channel: ChatChannel, messages: [ChatMessage])
+    /// `cursor` addresses the page before this one, or nil at the beginning of
+    /// history — which is what lets a reconnecting client keep paging.
+    case history(channel: ChatChannel, messages: [ChatMessage], cursor: String?)
     case ack(channel: ChatChannel, id: UUID, time: Int64)
     case delta(channel: ChatChannel, message: ChatMessage)
     case status(channel: ChatChannel, agent: ChatSender, state: AgentState, detail: String?)
@@ -130,7 +132,7 @@ enum ServerEvent: Sendable {
 
 extension ServerEvent: Decodable {
     private enum CodingKeys: String, CodingKey {
-        case type, channel, messages, id, time, message, agent, state, detail, code
+        case type, channel, messages, id, time, message, agent, state, detail, code, cursor
     }
 
     init(from decoder: Decoder) throws {
@@ -141,7 +143,8 @@ extension ServerEvent: Decodable {
         case "history":
             self = .history(
                 channel: try c.decode(ChatChannel.self, forKey: .channel),
-                messages: try c.decode([ChatMessage].self, forKey: .messages))
+                messages: try c.decode([ChatMessage].self, forKey: .messages),
+                cursor: try c.decodeIfPresent(String.self, forKey: .cursor))
 
         case "ack":
             let raw = try c.decode(String.self, forKey: .id)

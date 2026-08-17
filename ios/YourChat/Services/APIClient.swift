@@ -42,19 +42,23 @@ final class APIClient {
 
     struct Page: Sendable {
         let messages: [ChatMessage]
-        let hasMore: Bool
+        /// Addresses the page before this one; nil at the beginning of history.
+        let nextCursor: String?
+
+        var hasMore: Bool { nextCursor != nil }
     }
 
-    /// `before` is the server time of the oldest message already on screen.
-    func messages(in channel: ChatChannel, before: Int64?, limit: Int = 30) async throws -> Page {
+    /// The cursor is opaque — it encodes both time and row so messages sharing
+    /// a millisecond stay individually addressable. Pass nil for the newest page.
+    func messages(in channel: ChatChannel, cursor: String?, limit: Int = 30) async throws -> Page {
         struct Envelope: Decodable {
             let messages: [ChatMessage]
-            let hasMore: Bool
+            let nextCursor: String?
         }
         var path = "/api/messages?channel=\(channel.rawValue)&limit=\(limit)"
-        if let before { path += "&before=\(before)" }
+        if let cursor { path += "&cursor=\(cursor)" }
         let raw: Envelope = try await get(path)
-        return Page(messages: raw.messages, hasMore: raw.hasMore)
+        return Page(messages: raw.messages, nextCursor: raw.nextCursor)
     }
 
     // MARK: - Search

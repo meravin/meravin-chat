@@ -58,9 +58,16 @@ final class ChatService {
     private var didLoadFromDisk = false
 
     /// Paging state for scrolling up. `false` means we've reached the beginning
-    /// and must stop asking.
+    /// and must stop asking. Reset by every `history` snapshot, which replaces
+    /// the list — otherwise a channel paged to its start would keep claiming
+    /// there is nothing older after a reconnect truncated it back to one page.
     private(set) var hasMoreHistory: [ChatChannel: Bool] = [:]
     private(set) var isLoadingOlder: Set<ChatChannel> = []
+    /// Opaque cursor for the page before the oldest message we hold.
+    private var historyCursor: [ChatChannel: String] = [:]
+    /// Set when the relay rejects a frame. Distinct from `connection`: the
+    /// socket is fine, one message wasn't.
+    private(set) var lastRejection: String?
     private let api: APIClient
 
     init(config: RelayConfig, api: APIClient? = nil, store: ChatStore = ChatStore()) {
@@ -146,6 +153,7 @@ final class ChatService {
         insert(message, into: channel)   // 1. bubble appears immediately
         outbox[message.id] = message
         drafts[channel] = nil
+        lastRejection = nil              // a new attempt clears the last complaint
         persist()
 
         transmit(message)                // 2. then it goes on the wire
@@ -158,17 +166,18 @@ final class ChatService {
     func loadOlder(in channel: ChatChannel) async {
         guard hasMoreHistory[channel] != false else { return }
         guard !isLoadingOlder.contains(channel) else { return }
-        guard let oldest = messages[channel]?.first else { return }
+        guard let cursor = historyCursor[channel] else { return }
 
         isLoadingOlder.insert(channel)
         defer { isLoadingOlder.remove(channel) }
 
         do {
-            let page = try await api.messages(in: channel, before: oldest.time)
+            let page = try await api.messages(in: channel, cursor: cursor)
+            historyCursor[channel] = page.nextCursor
             hasMoreHistory[channel] = page.hasMore
 
-            // Prepend only what we don't already have; the newest page and this
-            // one can overlap when messages share a millisecond.
+            // Prepend only what we don't already have — a page can overlap the
+            // one above it when a reconnect re-seeded the list.
             let known = Set((messages[channel] ?? []).map(\.id))
             let fresh = page.messages.filter { !known.contains($0.id) }
             guard !fresh.isEmpty else { return }
@@ -176,7 +185,7 @@ final class ChatService {
             messages[channel] = (fresh + (messages[channel] ?? [])).sorted { $0.time < $1.time }
             persist()
         } catch {
-            // Leave `hasMoreHistory` alone so a later scroll can retry.
+            // Leave the cursor and `hasMoreHistory` alone so a later scroll retries.
         }
     }
 
@@ -234,8 +243,11 @@ final class ChatService {
         else { return }
 
         switch event {
-        case .history(let channel, let incoming):
+        case .history(let channel, let incoming, let cursor):
             merge(history: incoming, into: channel)
+            // The snapshot replaced the list, so paging state has to follow it.
+            historyCursor[channel] = cursor
+            hasMoreHistory[channel] = cursor != nil
             persist()
 
         case .ack(_, let id, let time):
@@ -251,8 +263,10 @@ final class ChatService {
             agentStatus[channel, default: [:]][agent] = AgentStatus(state: state, detail: detail)
 
         case .failure(let code, let message):
-            // A rejected frame is a bug in our own client, not a network issue.
-            connection = .offline("\(code): \(message)")
+            // A rejected frame is a bad message, not a dead socket — reporting
+            // it as `offline` would leave the app claiming no connection while
+            // the socket happily carries the next message.
+            lastRejection = message.isEmpty ? code : "\(code): \(message)"
         }
     }
 

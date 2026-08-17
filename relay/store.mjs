@@ -96,6 +96,14 @@ const PROFILE_DEFAULTS = {
   epigraph: '',
 }
 
+/** `"<ms>.<rowid>"` → `{time, rowId}`; anything malformed reads as "no cursor". */
+function parseCursor(cursor) {
+  if (cursor == null || cursor === '') return null
+  const [time, rowId] = String(cursor).split('.').map(Number)
+  if (!Number.isFinite(time) || !Number.isFinite(rowId)) return null
+  return { time, rowId }
+}
+
 export function openStore(path = 'data/yourchat.db') {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true })
   const db = new DatabaseSync(path)
@@ -114,8 +122,21 @@ export function openStore(path = 'data/yourchat.db') {
       `SELECT * FROM messages WHERE channel = ?
        ORDER BY time DESC, rowid DESC LIMIT ?`,
     ),
+    // Two-part cursor. A plain `time <` skips every sibling written in the
+    // same millisecond — routine in the group, where both AIs can land
+    // together — and those messages then become permanently unreachable.
     historyBefore: db.prepare(
-      `SELECT * FROM messages WHERE channel = ? AND time < ?
+      `SELECT * FROM messages
+       WHERE channel = ? AND (time < ? OR (time = ? AND rowid < ?))
+       ORDER BY time DESC, rowid DESC LIMIT ?`,
+    ),
+    historyTailWithRow: db.prepare(
+      `SELECT rowid AS row_id, * FROM messages WHERE channel = ?
+       ORDER BY time DESC, rowid DESC LIMIT ?`,
+    ),
+    historyBeforeWithRow: db.prepare(
+      `SELECT rowid AS row_id, * FROM messages
+       WHERE channel = ? AND (time < ? OR (time = ? AND rowid < ?))
        ORDER BY time DESC, rowid DESC LIMIT ?`,
     ),
 
@@ -263,8 +284,29 @@ export function openStore(path = 'data/yourchat.db') {
     history(channel, { limit = 50, before = null } = {}) {
       const rows = before == null
         ? q.historyTail.all(channel, limit)
-        : q.historyBefore.all(channel, before, limit)
+        : q.historyBefore.all(channel, before.time, before.time, before.rowId, limit)
       return rows.map(toMessage).reverse()
+    },
+
+    /**
+     * A page plus the cursor for the page before it. The cursor is `time.rowid`
+     * so messages sharing a millisecond stay individually addressable.
+     * @returns {{messages: object[], cursor: string|null, hasMore: boolean}}
+     */
+    historyPage(channel, { limit = 30, cursor = null } = {}) {
+      const parsed = parseCursor(cursor)
+      const rows = parsed == null
+        ? q.historyTailWithRow.all(channel, limit)
+        : q.historyBeforeWithRow.all(channel, parsed.time, parsed.time, parsed.rowId, limit)
+
+      // Rows arrive newest-first; the last one is the oldest in this page and
+      // therefore the cursor for whatever comes before it.
+      const oldest = rows.at(-1)
+      return {
+        messages: rows.map(toMessage).reverse(),
+        cursor: oldest ? `${oldest.time}.${oldest.row_id}` : null,
+        hasMore: rows.length === limit,
+      }
     },
 
     // --- route jobs ---------------------------------------------------------
@@ -384,11 +426,21 @@ export function openStore(path = 'data/yourchat.db') {
      * profile so the app still knows who it belongs to after a wipe.
      */
     eraseAll() {
+      const tables = ['messages', 'route_jobs', 'contexts', 'diary_entries',
+        'todos', 'health_snapshots', 'whispers']
       const counts = {}
-      for (const name of ['messages', 'route_jobs', 'contexts', 'diary_entries',
-        'todos', 'health_snapshots', 'whispers']) {
-        counts[name] = db.prepare(`SELECT COUNT(*) n FROM ${name}`).get().n
-        db.exec(`DELETE FROM ${name}`)
+      // All or nothing: a crash midway would otherwise leave AI contexts
+      // pointing at messages that no longer exist.
+      db.exec('BEGIN IMMEDIATE')
+      try {
+        for (const name of tables) {
+          counts[name] = db.prepare(`SELECT COUNT(*) n FROM ${name}`).get().n
+          db.exec(`DELETE FROM ${name}`)
+        }
+        db.exec('COMMIT')
+      } catch (err) {
+        db.exec('ROLLBACK')
+        throw err
       }
       return counts
     },

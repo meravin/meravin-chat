@@ -68,7 +68,10 @@ export async function generateWhisper({ store, agents, date, names }) {
   return store.putWhisper(date, clean, 'ai_a')
 }
 
-export function whisperRoutes({ store, agents, names }) {
+export function whisperRoutes({ store, agents, names, log = console }) {
+  /** Dates already being generated, so a burst of requests fires one model call. */
+  const inFlight = new Set()
+
   const forDate = async (date, { force = false } = {}) => {
     if (!force) {
       const cached = store.getWhisper(date)
@@ -82,7 +85,20 @@ export function whisperRoutes({ store, agents, names }) {
     }
   }
 
+  /**
+   * Fire-and-forget generation for callers that must not wait on a model —
+   * Home reads whatever is cached and calls this to fill the gap for next time.
+   */
+  const warm = (date) => {
+    if (inFlight.has(date) || store.getWhisper(date)) return
+    inFlight.add(date)
+    forDate(date)
+      .catch((err) => log.warn?.(`[whisper] ${date}: ${err?.message ?? err}`))
+      .finally(() => inFlight.delete(date))
+  }
+
   return {
+    warm,
     routes: {
       'GET /api/whisper': async (req, res, { query }) => {
         const date = query.get('date') ?? todayISO()

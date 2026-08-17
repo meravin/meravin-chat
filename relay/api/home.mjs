@@ -15,12 +15,13 @@ export function homeRoutes({ store, weather, whisper, names }) {
       const userName = profile.userName || names.user || ''
       const partner = profile.aiAName || names.ai_a || ''
 
-      // Both are best-effort: a missing key or a cold network must not stop the
-      // rest of the screen from rendering.
-      const [weatherNow, whisperToday] = await Promise.all([
-        weather.current().catch(() => null),
-        whisper.forDate(today).catch(() => null),
-      ])
+      // Weather is a short cached fetch, so it can be awaited. The whisper is a
+      // model call: serve whatever is already written and generate out of band,
+      // or the first Home load of the day blocks the entire screen on an AI
+      // round trip. The scheduler normally has it written well before this.
+      const weatherNow = await weather.current().catch(() => null)
+      const whisperToday = store.getWhisper(today)
+      if (!whisperToday) whisper.warm(today)
 
       const anniversaries = []
       if (profile.birthday) {

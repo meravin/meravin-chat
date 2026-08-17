@@ -111,20 +111,26 @@ export function createRelay({ store, router, agents, queues, broadcast, log = co
       const { message, inserted } = store.saveMessage(incoming)
       // 2. then ack, so a client that drops now knows it got through
       send(ackEvent(message.channel, message.id, message.time))
-      // 3. and only then wake the AIs — and only for a genuinely new message
-      if (inserted) {
-        broadcast(deltaEvent(message.channel, message))
-        dispatch(message)
-      }
+      // 3. only a genuinely new message is echoed to the other clients
+      if (inserted) broadcast(deltaEvent(message.channel, message))
+      // 4. dispatch on every attempt, including a resend of the same UUID.
+      //    `claimRouteJob` makes this idempotent, so a normal duplicate wakes
+      //    nobody — but one whose first attempt failed (and released its claim)
+      //    gets the retry the protocol promises.
+      dispatch(message)
       return { message, inserted }
     },
 
-    /** Initial payload after a (re)connect: one page per channel. */
+    /** Initial payload after a (re)connect: one page per channel, plus its cursor. */
     snapshot(limit = HISTORY_TURNS) {
-      return ['ai_a', 'ai_b', 'group'].map((channel) => ({
-        channel,
-        messages: store.history(channel, { limit }),
-      }))
+      return ['ai_a', 'ai_b', 'group'].map((channel) => {
+        const page = store.historyPage(channel, { limit })
+        return {
+          channel,
+          messages: page.messages,
+          cursor: page.hasMore ? page.cursor : null,
+        }
+      })
     },
 
     /** Waits for every in-flight AI round. Tests and shutdown use this. */

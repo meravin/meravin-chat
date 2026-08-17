@@ -41,7 +41,10 @@ const seedDiary = (base, body, date = todayISO()) =>
     body: JSON.stringify({ author: 'user', date, body }),
   }).then((r) => r.json())
 
-test('older pages come back through the before cursor', async (t) => {
+const page = (s, query) =>
+  fetch(`${s.base}/api/messages?channel=ai_a&${query}`, authed()).then((r) => r.json())
+
+test('older pages come back through the cursor', async (t) => {
   const s = await boot()
   t.after(() => s.close())
 
@@ -53,20 +56,43 @@ test('older pages come back through the before cursor', async (t) => {
     })
   }
 
-  const first = await (await fetch(`${s.base}/api/messages?channel=ai_a&limit=5`, authed())).json()
+  const first = await page(s, 'limit=5')
   assert.deepEqual(first.messages.map((m) => m.text), ['第 7 条', '第 8 条', '第 9 条', '第 10 条', '第 11 条'])
-  assert.equal(first.hasMore, true)
+  assert.ok(first.nextCursor, 'a full page carries a cursor for the one before it')
 
-  const older = await (await fetch(
-    `${s.base}/api/messages?channel=ai_a&limit=5&before=${first.messages[0].time}`, authed(),
-  )).json()
+  const older = await page(s, `limit=5&cursor=${first.nextCursor}`)
   assert.deepEqual(older.messages.map((m) => m.text), ['第 2 条', '第 3 条', '第 4 条', '第 5 条', '第 6 条'])
 
-  const last = await (await fetch(
-    `${s.base}/api/messages?channel=ai_a&limit=5&before=${older.messages[0].time}`, authed(),
-  )).json()
+  const last = await page(s, `limit=5&cursor=${older.nextCursor}`)
   assert.deepEqual(last.messages.map((m) => m.text), ['第 0 条', '第 1 条'])
   assert.equal(last.hasMore, false, 'a short page means there is nothing older')
+  assert.equal(last.nextCursor, null, 'and the client is told to stop asking')
+})
+
+test('paging reaches messages that share a millisecond', async (t) => {
+  const s = await boot()
+  t.after(() => s.close())
+
+  // The group routinely lands both AI replies in the same millisecond. A
+  // timestamp-only cursor makes every sibling at the page boundary
+  // permanently unreachable, which is silent history loss.
+  const T = 1_700_000_000_000
+  for (const [text, time] of [['a', T], ['b', T + 1], ['c', T + 1], ['d', T + 2]]) {
+    s.store.saveMessage({
+      id: randomUUID(), channel: 'ai_a', sender: 'user', text, time, replyTo: null, hop: 0,
+    })
+  }
+
+  const seen = []
+  let cursor = null
+  for (let guard = 0; guard < 10; guard += 1) {
+    const p = await page(s, `limit=2${cursor ? `&cursor=${cursor}` : ''}`)
+    seen.unshift(...p.messages.map((m) => m.text))
+    cursor = p.nextCursor
+    if (!cursor) break
+  }
+
+  assert.deepEqual(seen, ['a', 'b', 'c', 'd'], 'every message is reachable by paging')
 })
 
 test('pagination rejects a bad channel or cursor', async (t) => {
@@ -76,8 +102,86 @@ test('pagination rejects a bad channel or cursor', async (t) => {
   const badChannel = await fetch(`${s.base}/api/messages?channel=nope`, authed())
   assert.equal((await badChannel.json()).error, 'bad_channel')
 
-  const badCursor = await fetch(`${s.base}/api/messages?channel=ai_a&before=soon`, authed())
-  assert.equal((await badCursor.json()).error, 'bad_cursor')
+  const badCursor = await page(s, 'cursor=soon')
+  assert.equal(badCursor.error, 'bad_cursor')
+})
+
+test('a resend retries a route whose first attempt failed', async (t) => {
+  // The protocol invites resending the same UUID after a failure; that has to
+  // actually wake the AI again, not be swallowed as a duplicate.
+  let attempts = 0
+  const s = await boot({
+    ai_a: createEchoAdapter({
+      name: 'Claude',
+      behavior: () => {
+        attempts += 1
+        return attempts === 1 ? new Error('upstream down') : '这次成功了'
+      },
+    }),
+    ai_b: createEchoAdapter({ name: 'Codex' }),
+  })
+  t.after(() => s.close())
+
+  const id = randomUUID()
+  const frame = { type: 'message', id, channel: 'ai_a', text: '在吗' }
+
+  s.relay.ingest(frame, () => {})
+  await s.relay.settle()
+  assert.equal(attempts, 1)
+  assert.equal(s.store.history('ai_a').filter((m) => m.sender === 'ai_a').length, 0)
+
+  // Same UUID, as a reconnecting client would send.
+  s.relay.ingest(frame, () => {})
+  await s.relay.settle()
+  assert.equal(attempts, 2, 'the retry must reach the adapter')
+
+  const replies = s.store.history('ai_a').filter((m) => m.sender === 'ai_a')
+  assert.equal(replies.length, 1, 'and produce exactly one reply')
+  assert.equal(replies[0].text, '这次成功了')
+})
+
+test('a resend after success stays a no-op', async (t) => {
+  let attempts = 0
+  const s = await boot({
+    ai_a: createEchoAdapter({ name: 'Claude', behavior: () => { attempts += 1; return '好' } }),
+    ai_b: createEchoAdapter({ name: 'Codex' }),
+  })
+  t.after(() => s.close())
+
+  const frame = { type: 'message', id: randomUUID(), channel: 'ai_a', text: '在吗' }
+  s.relay.ingest(frame, () => {})
+  await s.relay.settle()
+  s.relay.ingest(frame, () => {})
+  await s.relay.settle()
+
+  assert.equal(attempts, 1, 'a duplicate of a message already answered wakes nobody')
+  assert.equal(s.store.history('ai_a').filter((m) => m.sender === 'ai_a').length, 1)
+})
+
+test('the history snapshot carries a paging cursor', async (t) => {
+  const s = await boot()
+  t.after(() => s.close())
+
+  for (let i = 0; i < 40; i += 1) {
+    s.store.saveMessage({
+      id: randomUUID(), channel: 'group', sender: 'user',
+      text: `#${i}`, time: 1_700_000_000_000 + i, replyTo: null, hop: 0,
+    })
+  }
+
+  const snapshot = s.relay.snapshot(30)
+  const group = snapshot.find((entry) => entry.channel === 'group')
+  assert.equal(group.messages.length, 30)
+  assert.ok(group.cursor, 'a reconnecting client can keep paging without re-fetching')
+
+  const older = await fetch(
+    `${s.base}/api/messages?channel=group&limit=30&cursor=${group.cursor}`, authed(),
+  ).then((r) => r.json())
+  assert.deepEqual(older.messages.map((m) => m.text), Array.from({ length: 10 }, (_, i) => `#${i}`))
+
+  // A channel shorter than one page has nothing before it.
+  const empty = snapshot.find((entry) => entry.channel === 'ai_b')
+  assert.equal(empty.cursor, null)
 })
 
 test('search covers both messages and diary entries', async (t) => {
