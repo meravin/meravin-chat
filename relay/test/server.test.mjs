@@ -178,7 +178,7 @@ test('profile, home, diary, todos and health are wired end to end', async (t) =>
     method: 'PATCH',
     ...authed(),
     body: JSON.stringify({
-      userName: '敏敏', aiAName: 'Claude', togetherSince: '2026-06-22',
+      userName: '蛋黄', aiAName: 'Claude', togetherSince: '2026-06-22',
       birthday: '01-06', anniversary: '06-22',
     }),
   })
@@ -237,7 +237,7 @@ test('profile, home, diary, todos and health are wired end to end', async (t) =>
 
   // The Home aggregate ties it together.
   const home = await (await fetch(`${s.base}/api/home`, authed())).json()
-  assert.equal(home.userName, '敏敏')
+  assert.equal(home.userName, '蛋黄')
   assert.equal(home.us.since, '2026-06-22')
   assert.ok(home.us.day >= 35, 'Day N counts from the start date')
   assert.equal(home.health.steps, 580)

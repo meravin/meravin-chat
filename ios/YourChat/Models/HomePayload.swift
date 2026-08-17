@@ -48,8 +48,8 @@ struct HomePayload: Codable, Equatable, Sendable {
         var partner: String
         var userName: String
 
-        /// "敏敏和 Claude，从 2026.6.22 到每一天" — and "Leon 和 Claude…" when
-        /// the name is Latin, which needs the space that a CJK name does not.
+        /// "蛋黄和 Claude，从 2026.6.22 到每一天" — and "Leo 和 Claude…" when the
+        /// name is Latin, which needs the space that a CJK name does not.
         var caption: String {
             let pretty = since.split(separator: "-").enumerated()
                 .map { $0.offset == 0 ? String($0.element) : String(Int($0.element) ?? 0) }

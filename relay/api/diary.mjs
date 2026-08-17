@@ -1,5 +1,5 @@
-// Two diaries side by side — the user's and the AI's — which is what the Diary
-// tab's 敏敏 / Claude segmented control switches between.
+// Two diaries side by side — the user's and the AI's — which is what the
+// segmented control at the top of the Diary tab switches between.
 import { randomUUID } from 'node:crypto'
 import { badRequest, notFound, readJson, sendJson } from './http.mjs'
 import { todayISO } from './dates.mjs'
