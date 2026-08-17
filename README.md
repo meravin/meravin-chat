@@ -208,10 +208,14 @@ with the iOS 26 SDK, iOS 18+.
 [Apache-2.0](LICENSE).
 
 The relay talks to Anthropic and OpenAI through their own SDKs; using it means
-agreeing to their terms and paying for your own usage. No credentials, prompts,
+agreeing to their terms and paying for your own usage. No credentials, personas,
 or conversations from this repo's author are included — `relay/prompts/*.example.md`
-and `relay/.env.example` are placeholders, and everything personal (names,
-dates, personas) is configuration you supply at runtime.
+and `relay/.env.example` are placeholders.
+
+The one thing shipped with a value rather than a blank is the default display
+name, `蛋黄`. Dates, personas and every conversation are yours from the first
+run; change the name in **Settings → 我们**, or in `PROFILE_DEFAULTS` in
+`relay/store.mjs` if you'd rather a fresh install start with your own.
 
 ---
 

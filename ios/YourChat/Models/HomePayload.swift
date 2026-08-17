@@ -104,9 +104,10 @@ struct HomePayload: Codable, Equatable, Sendable {
         anniversaries: [])
 }
 
-/// Names and dates live on the relay so nothing personal is compiled into the app.
+/// Names and dates live on the relay; these are only the values shown before the
+/// first fetch lands, and they mirror the relay's own defaults.
 struct Profile: Codable, Equatable, Sendable {
-    var userName: String = ""
+    var userName: String = "蛋黄"
     var aiAName: String = "Claude"
     var aiBName: String = "Codex"
     var groupName: String = "我们仨"

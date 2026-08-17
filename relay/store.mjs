@@ -82,7 +82,7 @@ CREATE TABLE IF NOT EXISTS profile (
 // Placeholders only. The app's Settings screen writes the real values, so
 // nothing personal is ever baked into the source.
 const PROFILE_DEFAULTS = {
-  userName: 'You',
+  userName: '蛋黄',
   aiAName: 'Claude',
   aiBName: 'Codex',
   groupName: '我们仨',
